@@ -123,7 +123,7 @@
   </link>
 
   <joint name="hokuyo_joint" type="fixed">
-    <origin xyz="1.8 0.0 0.0" rpy="0 0 0"/>
+    <origin xyz="1.8 0.0 0.1" rpy="0 0 0"/>
     <parent link="base_link" />
     <child link="laser" />
     <axis xyz="0 0 1" />
@@ -159,6 +159,7 @@
             <remapping>~/out:=scan</remapping>
             </ros>
             <output_type>sensor_msgs/LaserScan</output_type>
+            <frame_name>laser</frame_name>
         </plugin>
         </sensor>
     </gazebo>

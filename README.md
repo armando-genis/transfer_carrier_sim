@@ -10,6 +10,8 @@ sudo apt install ros-<ros2-distro>-gazebo-ros-pkgs
 sudo apt install ros-<ros2-distro>-ackermann-msgs
 sudo apt install ros-<distro>-ros2-control ros-<distro>-ros2-controllers
 sudo apt install ros-<distro>-controller-manager
+sudo apt install ros-<distro>-laser-geometry
+
 ```
 
  ## Set up ROS2
