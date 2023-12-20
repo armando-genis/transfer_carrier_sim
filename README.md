@@ -30,3 +30,17 @@ ros2 launch transfer_carrier_description gazebo.launch.py #For launching with ga
 ros2 launch transfer_carrier_description display.launch.py
 ```
  
+# Obstacle detector based lidar node
+```bash
+colcon build --packages-select lidar_detector
+source install/setup.bash
+ros2 launch lidar_detector Obstacles.launch.py
+```
+
+# Mux velocity node
+```bash
+colcon build --packages-select mux_velocity
+source install/setup.bash
+ros2 launch mux_velocity mux.launch.py
+```
+ 
