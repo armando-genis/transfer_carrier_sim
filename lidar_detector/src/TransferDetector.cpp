@@ -4,6 +4,7 @@
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include "std_msgs/msg/int32.hpp"
 
 #include <laser_geometry/laser_geometry.hpp>
 #include <geometry_msgs/msg/point.hpp>
@@ -56,6 +57,8 @@ private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_subscriber_;
     rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr roi_scan_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_publisher_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr publisher_warning_;
+
 
 
 public:
@@ -68,6 +71,8 @@ TransferDetector::TransferDetector(/* args */): Node("Obstacle_avoidance_node")
     scan_subscriber_ = this->create_subscription<sensor_msgs::msg::LaserScan>("/scan", 10, std::bind(&TransferDetector::scan_callback, this, std::placeholders::_1));
     roi_scan_publisher_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/roi_scan", 10);
     marker_array_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/cluster_markers", 10);
+    publisher_warning_ = this->create_publisher<std_msgs::msg::Int32>("warning_status", 10);
+
 
 
     RCLCPP_INFO(this->get_logger(), "obstacle_avoidance_node initialized");
@@ -195,6 +200,12 @@ void TransferDetector::scan_callback(const sensor_msgs::msg::LaserScan::SharedPt
     } else {
         RCLCPP_INFO(this->get_logger(), "[INFO 000] No obstacle detected");
     }
+
+    // Publish warning status
+    std_msgs::msg::Int32 warning_status;
+    warning_status.data = highest_warning_code;
+    publisher_warning_->publish(warning_status);
+    
 
 
 
