@@ -30,8 +30,8 @@ private:
     // Define ROI boundaries
     double roi_min_x_ = 0.1; // minimum x in meters to the back of the carrier
     double roi_max_x_ = 10.0;  // maximum x in meters to the front of the carrier
-    double roi_min_y_ = -2.5; // minimum y  in meters to the left of the carrier
-    double roi_max_y_ = 2.5;  // maximum y in meters to the right of the carrier
+    double roi_min_y_ = -1.0; // minimum y  in meters to the left of the carrier
+    double roi_max_y_ = 1.0;  // maximum y in meters to the right of the carrier
 
     // Detection 
     float angle_min;
@@ -101,51 +101,54 @@ void TransferDetector::scan_callback(const sensor_msgs::msg::LaserScan::SharedPt
     ranges = roi_scan.ranges;
 
     bool prev_inf = true;
-    float thresh_dist = 0.9;
-    float thresh_dist_2 = 1.5;
-    float thresh_dist_3 = 3.0;
+    float thresh_dist = 1.0;
+    float thresh_dist_2 = 4.5;
+    float thresh_dist_3 = 8.0;
 
-
+    int warning_code = 0;
     for (size_t i = 0; i < ranges.size(); ++i) {
         float distance = ranges[i];
-        float theta = angle_min + (i * angle_increment);
-        float x_curr = ranges[i] * cos(theta);
-        float y_curr = ranges[i] * sin(theta);
-
 
         // a obstacle is detected if the distance is less than 0.9m
         if (distance < thresh_dist) {
             if (isfinite(ranges[i])) {
                 if (prev_inf == false) {
-                    RCLCPP_INFO(this->get_logger(), "[WARNING 220] Obstacle detected in less than 0.9m radius");
+                    warning_code = 1;
                 }
                 prev_inf = false;
             }
         }
         // a obstacle is detected if the distance is more than 0.9 and less than 1.5m
-        else if (distance < thresh_dist_2 && distance > thresh_dist) {
-            if (isfinite(ranges[i])) {
+        else if (distance < thresh_dist_2 && distance > thresh_dist && warning_code < 2) {
+            if (isfinite(ranges[i]) && warning_code == 0) {
                 if (prev_inf == false) {
-                    RCLCPP_INFO(this->get_logger(), "[WARNING 330] Obstacle detected in 0.9 to 1.5m radius");
+                    warning_code = 2;
                 }
                 prev_inf = false;
-
             }
         }
         // a obstacle is detected if the distance is more than 1.5 and less than 3m
-        else if (distance < thresh_dist_3 && distance > thresh_dist_2) {
-            if (isfinite(ranges[i])) {
+        else if (distance < thresh_dist_3 && distance > thresh_dist_2 && warning_code < 3) {
+            if (isfinite(ranges[i]) && warning_code == 0) {
                 if (prev_inf == false) {
-                    RCLCPP_INFO(this->get_logger(), "[WARNING 550] Obstacle detected in 1.5 to 3m radius");
+                    warning_code = 3; 
                 }
                 prev_inf = false;
             }
         }
+    }
 
-
+    // Now, log the message based on the closest obstacle detected
+    if (warning_code == 1) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 220] Obstacle detected in less than 1.0m radius");
+    } else if (warning_code == 2) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 330] Obstacle detected in 1.0 to 2.5m radius");
+    } else if (warning_code == 3) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 550] Obstacle detected in 2.5 to 6.0m radius");
     }
 
     roi_scan_publisher_->publish(roi_scan); // Publish the ROI LaserScan
+
 }
 
 
@@ -275,3 +278,62 @@ int main(int argc, char** argv) {
 
     // // Publish the filtered LaserScan
     // roi_scan_publisher_->publish(filtered_scan);
+
+// This is the base 
+
+    //     // Extracting LaserScan information:
+    // angle_min = roi_scan.angle_min;
+    // angle_max = roi_scan.angle_max;
+    // angle_increment = roi_scan.angle_increment;
+    // range_min = roi_scan.range_min;
+    // range_max = roi_scan.range_max;
+    // ranges = roi_scan.ranges;
+
+    // bool prev_inf = true;
+    // float thresh_dist = 1.0;
+    // float thresh_dist_2 = 2.5;
+    // float thresh_dist_3 = 6.0;
+
+    // int warning_code = 0;
+    // for (size_t i = 0; i < ranges.size(); ++i) {
+    //     float distance = ranges[i];
+
+    //     // a obstacle is detected if the distance is less than 0.9m
+    //     if (distance < thresh_dist) {
+    //         if (isfinite(ranges[i])) {
+    //             if (prev_inf == false) {
+    //                 warning_code = 1;
+    //             }
+    //             prev_inf = false;
+    //         }
+    //     }
+    //     // a obstacle is detected if the distance is more than 0.9 and less than 1.5m
+    //     else if (distance < thresh_dist_2 && distance > thresh_dist && warning_code < 2) {
+    //         if (isfinite(ranges[i]) && warning_code == 0) {
+    //             if (prev_inf == false) {
+    //                 warning_code = 2;
+    //             }
+    //             prev_inf = false;
+    //         }
+    //     }
+    //     // a obstacle is detected if the distance is more than 1.5 and less than 3m
+    //     else if (distance < thresh_dist_3 && distance > thresh_dist_2 && warning_code < 3) {
+    //         if (isfinite(ranges[i]) && warning_code == 0) {
+    //             if (prev_inf == false) {
+    //                 warning_code = 3; 
+    //             }
+    //             prev_inf = false;
+    //         }
+    //     }
+    // }
+
+    // // Now, log the message based on the closest obstacle detected
+    // if (warning_code == 1) {
+    //     RCLCPP_INFO(this->get_logger(), "[WARNING 220] Obstacle detected in less than 1.0m radius");
+    // } else if (warning_code == 2) {
+    //     RCLCPP_INFO(this->get_logger(), "[WARNING 330] Obstacle detected in 1.0 to 2.5m radius");
+    // } else if (warning_code == 3) {
+    //     RCLCPP_INFO(this->get_logger(), "[WARNING 550] Obstacle detected in 2.5 to 6.0m radius");
+    // }
+
+    // roi_scan_publisher_->publish(roi_scan); // Publish the ROI LaserScan
