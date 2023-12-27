@@ -46,20 +46,23 @@ void MuxVelocity::warning_callback(const std_msgs::msg::Int32::SharedPtr msg)
     case 1: // Stop immediately
         velocity_cmd.linear.x = 0.0;
         velocity_cmd.angular.z = 0.0;
+        RCLCPP_INFO(this->get_logger(), "case 1");
         break;
     case 2: // Reduce velocity
-        velocity_cmd.linear.x = 0.5;
+        velocity_cmd.linear.x = 0.2;
         velocity_cmd.angular.z = 0.0;
         RCLCPP_INFO(this->get_logger(), "case 2");
         break;
     case 3: // Reduce velocity by 70%
-        velocity_cmd.linear.x = 0.75;
+        velocity_cmd.linear.x = 0.35;
         velocity_cmd.angular.z = 0.0;
+        RCLCPP_INFO(this->get_logger(), "case 3");
         break;
     default: // Normal velocity
         // Set to normal values as per your application
-        velocity_cmd.linear.x = 1.0;
+        velocity_cmd.linear.x = 5.0;
         velocity_cmd.angular.z = 0.0;
+        RCLCPP_INFO(this->get_logger(), "case 4: nothing detected");
         break;
     }
 
