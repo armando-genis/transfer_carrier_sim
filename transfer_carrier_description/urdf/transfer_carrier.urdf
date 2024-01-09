@@ -1,6 +1,15 @@
 <?xml version="1.0"?>
 <robot name="sam_bot" xmlns:xacro="http://ros.org/wiki/xacro">
 
+
+    <xacro:arg name="gpu" default="false"/>
+    <xacro:property name="gpu" value="$(arg gpu)" />
+
+
+    <xacro:include filename="$(find transfer_carrier_description)/urdf/VLP-32.xacro"/>
+
+
+
   <!-- Define robot constants -->
   <xacro:property name="base_width" value="1.67"/>
   <xacro:property name="base_length" value="3.33"/>
@@ -189,5 +198,10 @@
         </plugin>
         </sensor>
     </gazebo>
+
+
+  <!-- Lidar 3d -->
+  <!-- =============== Velodyne =============== -->
+  <xacro:VLP-16 parent="base_link" name="velodyne" topic="/points_raw" hz="10" samples="440" gpu="${gpu}"/>
 
 </robot>

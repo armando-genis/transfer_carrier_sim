@@ -207,8 +207,6 @@ void TransferDetector::scan_callback(const sensor_msgs::msg::LaserScan::SharedPt
     publisher_warning_->publish(warning_status);
     
 
-
-
     // RCLCPP_INFO(this->get_logger(), "Number of clusters detected: %d", numOfClusters);
 
     // Process the clusters for obstacle detection and visualization
@@ -229,8 +227,9 @@ void TransferDetector::process_clusters(const vector<std::vector<geometry_msgs::
         marker.id = i;
         marker.type = visualization_msgs::msg::Marker::POINTS;
         marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.scale.x = 0.1;
+        marker.scale.x = 0.5;
         marker.scale.y = 0.1;
+        marker.scale.z = 1.0;
         marker.color.r = static_cast<float>(rand()) / RAND_MAX; 
         marker.color.g = static_cast<float>(rand()) / RAND_MAX;
         marker.color.b = static_cast<float>(rand()) / RAND_MAX;
