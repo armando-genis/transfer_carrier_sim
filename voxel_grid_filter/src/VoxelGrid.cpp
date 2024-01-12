@@ -28,6 +28,7 @@ using namespace std;
 class VoxelGrid : public rclcpp::Node
 {
 private:
+
     // voxelgrid resolution
     float voxel_leaf_size_x_ = 0.2;
     float voxel_leaf_size_y_ = 0.05;
@@ -40,11 +41,11 @@ private:
     // The velodyne is mounted on the car with a bad orientation, so the x is the y axis. 
     double roi_max_x_ = 0.1; //FRONT THE CAR
     double roi_max_y_ = 1.0;  //LEFT THE CAR
-    double roi_max_z_ = 2.0; //UP THE VELODYNE
+    double roi_max_z_ = 0.1; //UP THE VELODYNE
 
     double roi_min_x_ = -10.0; //RIGHT THE CAR 
     double roi_min_y_ = -1.0; //BACK THE CAR
-    double roi_min_z_ = -1.0; //DOWN THE VELODYNE
+    double roi_min_z_ = -2.0; //DOWN THE VELODYNE
 
     Eigen::Vector4f ROI_MAX_POINT, ROI_MIN_POINT;
 
