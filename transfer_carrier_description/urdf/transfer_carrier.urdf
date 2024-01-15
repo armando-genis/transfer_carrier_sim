@@ -204,4 +204,17 @@
   <!-- =============== Velodyne =============== -->
   <xacro:VLP-16 parent="base_link" name="velodyne" topic="/points_raw" hz="10" samples="440" gpu="${gpu}"/>
 
+
+  <!-- =============== detecor wall =============== -->
+  <joint name="detector_wall_joint" type="fixed">
+    <origin xyz="2.0 0 0.3" rpy="0 0 0" />
+    <parent link="base_footprint"/>
+    <child link="detector_wall"/>
+
+  </joint>
+
+  <link name="detector_wall">
+
+  </link>
+
 </robot>

@@ -1,17 +1,9 @@
+// 3D LiDAR Object Detection & Tracking using Euclidean Clustering, RANSAC, & Hungarian Algorithm
+// RORS2
 #include <rclcpp/rclcpp.hpp>
-// Ros2
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <sensor_msgs/msg/camera_info.hpp>
-
-
-#include <vision_msgs/msg/detection2_d_array.hpp>
-#include <vision_msgs/msg/detection3_d_array.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_sensor_msgs/tf2_sensor_msgs.hpp>
-#include <geometry_msgs/msg/transform_stamped.hpp>
-
+#include <visualization_msgs/msg/marker.hpp>
 
 // C++
 #include <iostream>
@@ -20,12 +12,6 @@
 
 // Eigen
 #include <Eigen/Dense>
-
-// OpenCV
-#include <opencv2/opencv.hpp>
-
-// OpenCV and ROS
-#include <image_geometry/pinhole_camera_model.h>
 
 // PCL
 #include <pcl/point_types.h>
@@ -36,237 +22,182 @@
 #include <pcl/filters/extract_indices.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+using namespace std;
 
 #include "obstacle_detector.hpp"
 
+struct BBox
+{
+    float x_min;
+    float x_max;
+    float y_min;
+    float y_max;
+    float z_min;
+    float z_max;
+    double r = 1.0;
+    double g = 1.0;
+    double b = 0.0;
+};
 
-class Processing_lidar : public rclcpp::Node
+class ObjectDetection: public rclcpp::Node
 {
 private:
-    float GROUND_THRESHOLD = 0.03;
-    float CLUSTER_THRESH = 0.25;
-    int CLUSTER_MAX_SIZE = 5000; 
-    int CLUSTER_MIN_SIZE = 10;
+    // variables
+    float GROUND_THRESHOLD;
+    float CLUSTER_THRESH;
+    int CLUSTER_MAX_SIZE;
+    int CLUSTER_MIN_SIZE;
     size_t obstacle_id_;
 
-
-    bool USE_PCA_BOX = 0;
-    float DISPLACEMENT_THRESH = 1.0;
-    float IOU_THRESH = 1.0;
-    bool USE_TRACKING = 1;
-
-
-    std::string bbox_target_frame_;
-    std::string bbox_source_frame_;
-    std::shared_ptr<tf2_ros::Buffer> tf2_buffer;
-    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
-    std::vector<Box> curr_boxes_;   // You need to define the 'Box' type
+    bool USE_PCA_BOX;
+    float DISPLACEMENT_THRESH;
+    float IOU_THRESH;
+    bool USE_TRACKING;
+    std::vector<Box> curr_boxes_; 
     std::vector<Box> prev_boxes_;
 
-
-    using PointCloudMsg = sensor_msgs::msg::PointCloud2;
     std::shared_ptr<lidar_obstacle_detector::ObstacleDetector<pcl::PointXYZ>> obstacle_detector;
 
-    void publishDetectedObjects(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header);
-    void publishDetectedObjectsversion2(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header);
 
+    void distance_detector(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header);
 
+    void box3dcreation(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header);
+
+    void publisherboxes(std::vector<BBox>&& bboxes, const std_msgs::msg::Header& header);
+
+    void warnning_display(const int warning_code);
+
+    // Point Cloud callback
     void pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
+
+    // Subscriber & Publisher
     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr sub_points_cloud_;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ground_seg_pub_;
-    rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr pub_detected_objects_;
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub;
+    // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr ground_seg_pub_;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr marker_pub_next;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr wall_warning;
 
 
 public:
-    Processing_lidar(/* args */);
-    ~Processing_lidar();
-    void initialize();
+    ObjectDetection(/* args */);
+    ~ObjectDetection();
 };
 
-
-Processing_lidar::Processing_lidar(/* args */) : Node("Lidar_Processing_node")
-
+ObjectDetection::ObjectDetection(/* args */) : Node("lidar3d_clustering_node")
 {
-    sub_points_cloud_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/points_roi", 10, std::bind(&Processing_lidar::pointCloudCallback, this, std::placeholders::_1));
-    ground_seg_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("ground_points", 10);
-    marker_pub =
-        this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker_array", 10);
+    // Parameters
+    this->declare_parameter("GROUND_THRESHOLD", 0.2);
+    this->declare_parameter("CLUSTER_THRESH", 0.5);
+    this->declare_parameter("CLUSTER_MAX_SIZE", 3000);
+    this->declare_parameter("CLUSTER_MIN_SIZE", 10);
+    this->declare_parameter("USE_PCA_BOX", true);
+    this->declare_parameter("DISPLACEMENT_THRESH", 0.2);
+    this->declare_parameter("IOU_THRESH", 0.5);
+    this->declare_parameter("USE_TRACKING", true);
+    
 
-    marker_pub_next =
-        this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker_array_next", 10);
-        
+    // Get parameters
+    this->get_parameter("GROUND_THRESHOLD", GROUND_THRESHOLD);
+    this->get_parameter("CLUSTER_THRESH", CLUSTER_THRESH);
+    this->get_parameter("CLUSTER_MAX_SIZE", CLUSTER_MAX_SIZE);
+    this->get_parameter("CLUSTER_MIN_SIZE", CLUSTER_MIN_SIZE);
+    this->get_parameter("USE_PCA_BOX", USE_PCA_BOX);
+    this->get_parameter("DISPLACEMENT_THRESH", DISPLACEMENT_THRESH);
+    this->get_parameter("IOU_THRESH", IOU_THRESH);
+    this->get_parameter("USE_TRACKING", USE_TRACKING);
+
+    
+    // Create subscriber
+    sub_points_cloud_ = this->create_subscription<sensor_msgs::msg::PointCloud2>("/points_roi", 10, std::bind(&ObjectDetection::pointCloudCallback, this, std::placeholders::_1)); // roi points cloud
+
+    // Create publisher
+    // ground_seg_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("ground_points", 10); // ground points
+    marker_pub_next = this->create_publisher<visualization_msgs::msg::MarkerArray>("visualization_marker_array_next", 10); // detector objects
+    wall_warning = this->create_publisher<visualization_msgs::msg::Marker>("visualization_marker", 10);
     // Create point processor
     obstacle_detector = std::make_shared<lidar_obstacle_detector::ObstacleDetector<pcl::PointXYZ>>();
-    pub_detected_objects_ = this->create_publisher<vision_msgs::msg::Detection3DArray>("/detected_objects", 10);
-    
+
     obstacle_id_ = 0;
-    RCLCPP_INFO(this->get_logger(), "Lidar_Processing_node initialized");
+    RCLCPP_INFO(this->get_logger(), "lidar3d_Clustering_node initialized");
+
+    // Print parameters
+    // RCLCPP_INFO(this->get_logger(), "GROUND_THRESHOLD: %f", GROUND_THRESHOLD);
+    // RCLCPP_INFO(this->get_logger(), "CLUSTER_THRESH: %f", CLUSTER_THRESH);
+    // RCLCPP_INFO(this->get_logger(), "CLUSTER_MAX_SIZE: %d", CLUSTER_MAX_SIZE);
+    // RCLCPP_INFO(this->get_logger(), "CLUSTER_MIN_SIZE: %d", CLUSTER_MIN_SIZE);
+    // RCLCPP_INFO(this->get_logger(), "USE_PCA_BOX: %d", USE_PCA_BOX);
+    // RCLCPP_INFO(this->get_logger(), "DISPLACEMENT_THRESH: %f", DISPLACEMENT_THRESH);
+    // RCLCPP_INFO(this->get_logger(), "IOU_THRESH: %f", IOU_THRESH);
+    // RCLCPP_INFO(this->get_logger(), "USE_TRACKING: %d", USE_TRACKING);
+
+
 }
 
-Processing_lidar::~Processing_lidar()
+ObjectDetection::~ObjectDetection()
 {
 }
 
-void Processing_lidar::initialize()
+// Point Cloud callback
+void ObjectDetection::pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-    tf2_buffer = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf2_buffer, shared_from_this(), false);
-}
-
-
-void Processing_lidar::pointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
-{
-    pcl::PointCloud<pcl::PointXYZI>::Ptr input_cloud(
-        new pcl::PointCloud<pcl::PointXYZI>);
-
+    // Convert ROS PointCloud2 to PCL PointCloud
+    pcl::PointCloud<pcl::PointXYZ>::Ptr input_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::fromROSMsg(*msg, *input_cloud);
 
-
-    // Convert your PointXYZI cloud to PointXYZ cloud if necessary.
-    pcl::PointCloud<pcl::PointXYZ>::Ptr converted_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::copyPointCloud(*input_cloud, *converted_cloud);
-
     // Pass a const pointer (ConstPtr) to segmentPlane.
-    auto segmented_clouds = obstacle_detector->segmentPlane(converted_cloud, 100, GROUND_THRESHOLD);
-    auto cloud_clusters = obstacle_detector->clustering(segmented_clouds.first, CLUSTER_THRESH, CLUSTER_MIN_SIZE, CLUSTER_MAX_SIZE);
+    auto segmented_clouds = obstacle_detector->segmentPlane(input_cloud, 100, GROUND_THRESHOLD);
+    auto cloud_clusters = obstacle_detector->clustering(input_cloud, CLUSTER_THRESH, CLUSTER_MIN_SIZE, CLUSTER_MAX_SIZE);
 
-    // Publish the detected objects
-    publishDetectedObjects(std::move(cloud_clusters), msg->header);
+    box3dcreation(std::move(cloud_clusters), msg->header);
 
-    publishDetectedObjectsversion2(std::move(cloud_clusters), msg->header);
-
+    
+    distance_detector(std::move(cloud_clusters), msg->header);
 
     std::cout << "Number of clustersasdasd: " << cloud_clusters.size() << std::endl;
 
-
-    Processing_lidar::PointCloudMsg downsampled_cloud_msg;
-    pcl::toROSMsg(*(segmented_clouds.first), downsampled_cloud_msg);
-
-    ground_seg_pub_->publish(downsampled_cloud_msg);
-}
-
-
-void Processing_lidar::publishDetectedObjects(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header)
-{
-    curr_boxes_.clear(); // Clear the current boxes at the beginning
-    for (auto& cluster : cloud_clusters)
-    {
-        // Create Bounding Boxes
-        Box box = USE_PCA_BOX ?
-          obstacle_detector->pcaBoundingBox(cluster, obstacle_id_) :
-          obstacle_detector->axisAlignedBoundingBox(cluster, obstacle_id_);
-
-        if (obstacle_id_ < SIZE_MAX) {
-            ++obstacle_id_;
-        } else {
-            obstacle_id_ = 0;
-        }
-
-        curr_boxes_.emplace_back(box);
-    }
-
-    // Additional code for Box ID re-assignment and frame transform...
-    if (USE_TRACKING)
-        obstacle_detector->obstacleTracking(prev_boxes_, curr_boxes_, DISPLACEMENT_THRESH, IOU_THRESH);
-
-    //==================================== Drawing Boxes  ====================================
-
-    visualization_msgs::msg::MarkerArray marker_array;
-
-    int id = 0;
-    const std_msgs::msg::Header& inp_header = header;
-
-
-    std::cout << "Number of boxes: " << curr_boxes_.size() << std::endl;
-
-    for (const auto& box : curr_boxes_)
-    {
-        visualization_msgs::msg::Marker marker;
-        marker.header.frame_id = inp_header.frame_id;
-        marker.header.stamp = inp_header.stamp;
-        marker.ns = "obstacle_boxes";
-        marker.id = id++;
-        marker.type = visualization_msgs::msg::Marker::CUBE;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-
-        // Set the pose of the marker. This is a full 6DOF pose relative to the frame/time specified in the header
-        marker.pose.position.x = box.position(0);
-        marker.pose.position.y = box.position(1);
-        marker.pose.position.z = box.position(2);
-        marker.pose.orientation.w = box.quaternion.w();
-        marker.pose.orientation.x = box.quaternion.x();
-        marker.pose.orientation.y = box.quaternion.y();
-        marker.pose.orientation.z = box.quaternion.z();
-
-        // Set the scale of the marker -- 1x1x1 here means 1m on a side
-        marker.scale.x = 1.0; // You should set these values based on the actual size of the boxes
-        marker.scale.y = 1.0;
-        marker.scale.z = 1.0;
-
-        // Set the color -- be sure to set alpha to something non-zero!
-        marker.color.r = 0.0f;
-        marker.color.g = 1.0f;
-        marker.color.b = 0.0f;
-        marker.color.a = 0.8f;
-
-        marker_array.markers.push_back(marker);
-    }
-
-    marker_pub->publish(marker_array);
-
-}
-
-
-
-void Processing_lidar::publishDetectedObjectsversion2(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header)
-{
-    struct BBox
-    {
-        float x_min;
-        float x_max;
-        float y_min;
-        float y_max;
-        float z_min;
-        float z_max;
-        double r = 1.0;
-        double g = 0.0;
-        double b = 0.0;
-    };
+    // Publish ground points
+    // sensor_msgs::msg::PointCloud2 ground_cloud_msg;
+    // pcl::toROSMsg(*segmented_clouds.first, ground_cloud_msg);
+    // ground_cloud_msg.header = msg->header;
+    // ground_seg_pub_->publish(ground_cloud_msg);
     
+}
+
+
+void ObjectDetection::box3dcreation(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header)
+{
+
     std::vector<BBox> bboxes;
     
-    size_t min_reasonable_size = 50;
-    size_t max_reasonable_size = 1900;
     int num_reasonable_clusters = 0;
     
     for (auto& cluster : cloud_clusters)
     {
-        if (cluster->size() > min_reasonable_size && cluster->size() < max_reasonable_size)
-        {
-            Eigen::Vector4f min_pt, max_pt;
-            pcl::getMinMax3D<pcl::PointXYZ>(*cluster, min_pt, max_pt);
 
-            BBox bbox;
-            bbox.x_min = min_pt[0];
-            bbox.y_min = min_pt[1];
-            bbox.z_min = min_pt[2];
-            bbox.x_max = max_pt[0];
-            bbox.y_max = max_pt[1];
-            bbox.z_max = max_pt[2];
+        Eigen::Vector4f min_pt, max_pt;
+        pcl::getMinMax3D<pcl::PointXYZ>(*cluster, min_pt, max_pt);
 
-            bboxes.push_back(bbox);
-            num_reasonable_clusters++;
-        }
+        BBox bbox;
+        bbox.x_min = min_pt[0];
+        bbox.y_min = min_pt[1];
+        bbox.z_min = min_pt[2];
+        bbox.x_max = max_pt[0];
+        bbox.y_max = max_pt[1];
+        bbox.z_max = max_pt[2];
+
+        bboxes.push_back(bbox);
+        num_reasonable_clusters++;
+
     }
 
-    std::cout << "Number of reasonable clusters: " << num_reasonable_clusters << std::endl;
+    publisherboxes(std::move(bboxes), header);
 
-    //==================================== Drawing Boxes  ====================================
+}
+
+void ObjectDetection::publisherboxes(std::vector<BBox>&& bboxes, const std_msgs::msg::Header& header){
+//==================================== Drawing Boxes  ====================================
 
     visualization_msgs::msg::MarkerArray marker_array;
+
 
     int id = 0;
     const std_msgs::msg::Header& inp_header = header;
@@ -342,8 +273,8 @@ void Processing_lidar::publishDetectedObjectsversion2(std::vector<pcl::PointClou
         connecting_lines_marker.action = visualization_msgs::msg::Marker::ADD;
         connecting_lines_marker.pose.orientation.w = 1.0;
         connecting_lines_marker.scale.x = 0.04;
-        connecting_lines_marker.color.r = 0.0;
-        connecting_lines_marker.color.g = 1.0;
+        connecting_lines_marker.color.r = 1.0;
+        connecting_lines_marker.color.g = 0.0;
         connecting_lines_marker.color.b = 0.0;
         connecting_lines_marker.color.a = 1.0;
 
@@ -372,9 +303,9 @@ void Processing_lidar::publishDetectedObjectsversion2(std::vector<pcl::PointClou
         corner_marker.type = visualization_msgs::msg::Marker::SPHERE;
         corner_marker.action = visualization_msgs::msg::Marker::ADD;
         corner_marker.pose.orientation.w = 1.0;
-        corner_marker.scale.x = 0.4;
-        corner_marker.scale.y = 0.4;
-        corner_marker.scale.z = 0.4;
+        corner_marker.scale.x = 0.2;
+        corner_marker.scale.y = 0.2;
+        corner_marker.scale.z = 0.2;
         corner_marker.color.r = bbox.r;
         corner_marker.color.g = 0.2;
         corner_marker.color.b = 0.5;
@@ -418,14 +349,111 @@ void Processing_lidar::publishDetectedObjectsversion2(std::vector<pcl::PointClou
     }
 
 
+}
+
+
+void ObjectDetection::distance_detector(std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr>&& cloud_clusters, const std_msgs::msg::Header& header)
+{
+
+    float thresh_dist = 1.0; // Threshold for very close obstacles
+    float thresh_dist_2 = 4.5; // Threshold for moderately close obstacles
+    float thresh_dist_3 = 7.0; // Threshold for distant obstacles
+    int highest_warning_code = 4; // To store the highest severity warning code
+
+
+    for (auto& cluster : cloud_clusters)
+    {
+        float min_distance = std::numeric_limits<float>::max();
+        int warning_code = 4;
+
+        for (const auto& point : cluster->points) {
+            float distance = sqrt(point.x * point.x + point.y * point.y);
+            if (distance < min_distance) {
+                min_distance = distance;
+            }
+        }
+
+        if (min_distance < thresh_dist) {
+            warning_code = 1; // Very close obstacle
+        } else if (min_distance >= thresh_dist && min_distance < thresh_dist_2) {
+            warning_code = 2; // Moderately close obstacle
+        } else if (min_distance >= thresh_dist_2 && min_distance < thresh_dist_3) {
+            warning_code = 3; // Distant obstacle
+        }
+
+        if (warning_code < highest_warning_code) {
+            highest_warning_code = warning_code;
+        }
+        
+
+        std::cout << " Warning code: " << warning_code << " Distance: " << min_distance << std::endl;
+
+    }
+
+    if (highest_warning_code == 1) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 220] Obstacle detected in less than 1.0m radius");
+    } else if (highest_warning_code == 2) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 330] Obstacle detected in 1.0 to 4.5m radius");
+    } else if (highest_warning_code == 3) {
+        RCLCPP_INFO(this->get_logger(), "[WARNING 550] Obstacle detected in 4.5 to 7.0m radius");
+    } else {
+        RCLCPP_INFO(this->get_logger(), "[INFO 000] No obstacle detected");
+    }
+
+    warnning_display(highest_warning_code);
 
 }
 
 
+void ObjectDetection::warnning_display(const int warning_code)
+{
+
+    visualization_msgs::msg::Marker wall_marker;
+    wall_marker.header.frame_id = "detector_wall";
+    wall_marker.header.stamp = rclcpp::Clock().now();
+    wall_marker.ns = "wall";
+    wall_marker.id = 0;
+    wall_marker.type = visualization_msgs::msg::Marker::CUBE;
+    wall_marker.action = visualization_msgs::msg::Marker::ADD;
+    wall_marker.pose.position.x = 0.0;
+    wall_marker.pose.position.y = 0.0;
+    wall_marker.pose.position.z = 0.0;
+    wall_marker.pose.orientation.x = 0.0;
+    wall_marker.pose.orientation.y = 0.0;
+    wall_marker.pose.orientation.z = 0.0;
+    wall_marker.pose.orientation.w = 1.0;
+    wall_marker.scale.x = 0.1;
+    wall_marker.scale.y = 2.0;
+    wall_marker.scale.z = 1.0;
+    wall_marker.color.a = 0.4;
+
+    if (warning_code == 1) {
+        wall_marker.color.r = 1.0;
+        wall_marker.color.g = 0.0;
+        wall_marker.color.b = 0.0;
+    } else if (warning_code == 2) {
+        wall_marker.color.r = 1.0;
+        wall_marker.color.g = 1.0;
+        wall_marker.color.b = 0.0;
+    } else if (warning_code == 3) {
+        wall_marker.color.r = 0.0;
+        wall_marker.color.g = 1.0;
+        wall_marker.color.b = 0.0;
+    } else {
+        wall_marker.color.r = 0.0;
+        wall_marker.color.g = 1.0;
+        wall_marker.color.b = 0.0;
+    }
+
+    wall_warning->publish(wall_marker);
+
+}
+
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<Processing_lidar>();
+    auto node = std::make_shared<ObjectDetection>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
 }
+
