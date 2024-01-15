@@ -356,7 +356,7 @@ void ObjectDetection::distance_detector(std::vector<pcl::PointCloud<pcl::PointXY
 {
 
     float thresh_dist = 1.0; // Threshold for very close obstacles
-    float thresh_dist_2 = 4.5; // Threshold for moderately close obstacles
+    float thresh_dist_2 = 2.5; // Threshold for moderately close obstacles
     float thresh_dist_3 = 7.0; // Threshold for distant obstacles
     int highest_warning_code = 4; // To store the highest severity warning code
 
